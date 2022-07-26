@@ -21,9 +21,7 @@ class SentinelTestClient(object):
     def sentinel_slaves(self, master_name):
         self.cluster.connection_error_if_down(self)
         self.cluster.timeout_if_down(self)
-        if master_name != self.cluster.service_name:
-            return []
-        return self.cluster.slaves
+        return [] if master_name != self.cluster.service_name else self.cluster.slaves
 
 
 class SentinelTestCluster(object):

@@ -16,24 +16,15 @@ class StringJoiningConnection(Connection):
         except socket.error:
             e = sys.exc_info()[1]
             self.disconnect()
-            if len(e.args) == 1:
-                _errno, errmsg = 'UNKNOWN', e.args[0]
-            else:
-                _errno, errmsg = e.args
-            raise ConnectionError("Error %s while writing to socket. %s." %
-                                  (_errno, errmsg))
-        except:
-            self.disconnect()
-            raise
+            _errno, errmsg = ('UNKNOWN', e.args[0]) if len(e.args) == 1 else e.args
+            raise ConnectionError(f"Error {_errno} while writing to socket. {errmsg}.")
 
     def pack_command(self, *args):
         "Pack a series of arguments into a value Redis command"
         args_output = SYM_EMPTY.join([
             SYM_EMPTY.join((SYM_DOLLAR, b(str(len(k))), SYM_CRLF, k, SYM_CRLF))
             for k in imap(self.encoder.encode, args)])
-        output = SYM_EMPTY.join(
-            (SYM_STAR, b(str(len(args))), SYM_CRLF, args_output))
-        return output
+        return SYM_EMPTY.join((SYM_STAR, b(str(len(args))), SYM_CRLF, args_output))
 
 
 class ListJoiningConnection(Connection):
@@ -48,15 +39,8 @@ class ListJoiningConnection(Connection):
         except socket.error:
             e = sys.exc_info()[1]
             self.disconnect()
-            if len(e.args) == 1:
-                _errno, errmsg = 'UNKNOWN', e.args[0]
-            else:
-                _errno, errmsg = e.args
-            raise ConnectionError("Error %s while writing to socket. %s." %
-                                  (_errno, errmsg))
-        except:
-            self.disconnect()
-            raise
+            _errno, errmsg = ('UNKNOWN', e.args[0]) if len(e.args) == 1 else e.args
+            raise ConnectionError(f"Error {_errno} while writing to socket. {errmsg}.")
 
     def pack_command(self, *args):
         output = []
@@ -67,8 +51,7 @@ class ListJoiningConnection(Connection):
             if len(buff) > 6000 or len(k) > 6000:
                 buff = SYM_EMPTY.join(
                     (buff, SYM_DOLLAR, b(str(len(k))), SYM_CRLF))
-                output.append(buff)
-                output.append(k)
+                output.extend((buff, k))
                 buff = SYM_CRLF
             else:
                 buff = SYM_EMPTY.join((buff, SYM_DOLLAR, b(str(len(k))),

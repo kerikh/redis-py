@@ -44,12 +44,9 @@ if HIREDIS_AVAILABLE:
                "hiredis %s. Please consider upgrading." % hiredis.__version__)
         warnings.warn(msg)
 
-    HIREDIS_USE_BYTE_BUFFER = True
-    # only use byte buffer if hiredis supports it and the Python version
-    # is >= 2.7
-    if not HIREDIS_SUPPORTS_BYTE_BUFFER or (
-            sys.version_info[0] == 2 and sys.version_info[1] < 7):
-        HIREDIS_USE_BYTE_BUFFER = False
+    HIREDIS_USE_BYTE_BUFFER = HIREDIS_SUPPORTS_BYTE_BUFFER and (
+        sys.version_info[0] != 2 or sys.version_info[1] >= 7
+    )
 
 SYM_STAR = b('*')
 SYM_DOLLAR = b('$')
@@ -187,8 +184,7 @@ class SocketBuffer(object):
             raise TimeoutError("Timeout reading from socket")
         except socket.error:
             e = sys.exc_info()[1]
-            raise ConnectionError("Error while reading from socket: %s" %
-                                  (e.args,))
+            raise ConnectionError(f"Error while reading from socket: {e.args}")
 
     def read(self, length):
         length = length + 2  # make sure to read the \r\n terminator
@@ -288,8 +284,7 @@ class PythonParser(BaseParser):
         byte, response = byte_to_chr(response[0]), response[1:]
 
         if byte not in ('-', '+', ':', '$', '*'):
-            raise InvalidResponse("Protocol Error: %s, %s" %
-                                  (str(byte), str(response)))
+            raise InvalidResponse(f"Protocol Error: {str(byte)}, {str(response)}")
 
         # server returned an error
         if byte == '-':
@@ -304,24 +299,20 @@ class PythonParser(BaseParser):
             # and/or the pipeline's execute() will raise this error if
             # necessary, so just return the exception instance here.
             return error
-        # single value
         elif byte == '+':
             pass
-        # int value
         elif byte == ':':
             response = long(response)
-        # bulk response
         elif byte == '$':
             length = int(response)
             if length == -1:
                 return None
             response = self._buffer.read(length)
-        # multi-bulk response
         elif byte == '*':
             length = int(response)
             if length == -1:
                 return None
-            response = [self.read_response() for i in xrange(length)]
+            response = [self.read_response() for _ in xrange(length)]
         if isinstance(response, bytes):
             response = self.encoder.decode(response)
         return response
@@ -399,8 +390,7 @@ class HiredisParser(BaseParser):
                 raise TimeoutError("Timeout reading from socket")
             except socket.error:
                 e = sys.exc_info()[1]
-                raise ConnectionError("Error while reading from socket: %s" %
-                                      (e.args,))
+                raise ConnectionError(f"Error while reading from socket: {e.args}")
             if HIREDIS_USE_BYTE_BUFFER:
                 self._reader.feed(self._buffer, 0, bufflen)
             else:
@@ -425,10 +415,7 @@ class HiredisParser(BaseParser):
         return response
 
 
-if HIREDIS_AVAILABLE:
-    DefaultParser = HiredisParser
-else:
-    DefaultParser = PythonParser
+DefaultParser = HiredisParser if HIREDIS_AVAILABLE else PythonParser
 
 
 class Connection(object):
@@ -546,11 +533,9 @@ class Connection(object):
         # args for socket.error can either be (errno, "message")
         # or just "message"
         if len(exception.args) == 1:
-            return "Error connecting to %s:%s. %s." % \
-                (self.host, self.port, exception.args[0])
+            return f"Error connecting to {self.host}:{self.port}. {exception.args[0]}."
         else:
-            return "Error %s connecting to %s:%s. %s." % \
-                (exception.args[0], self.host, self.port, exception.args[1])
+            return f"Error {exception.args[0]} connecting to {self.host}:{self.port}. {exception.args[1]}."
 
     def on_connect(self):
         "Initialize the connection, authenticate and select a database"
@@ -600,11 +585,7 @@ class Connection(object):
             else:
                 errno = e.args[0]
                 errmsg = e.args[1]
-            raise ConnectionError("Error %s while writing to socket. %s." %
-                                  (errno, errmsg))
-        except:
-            self.disconnect()
-            raise
+            raise ConnectionError(f"Error {errno} while writing to socket. {errmsg}.")
 
     def send_command(self, *args):
         "Pack and send a command to the Redis server"
@@ -640,8 +621,7 @@ class Connection(object):
         # to prevent them from being encoded.
         command = args[0]
         if ' ' in command:
-            args = tuple([Token.get_token(s)
-                          for s in command.split()]) + args[1:]
+            args = (tuple(Token.get_token(s) for s in command.split()) + args[1:])
         else:
             args = (Token.get_token(command),) + args[1:]
 
@@ -654,8 +634,7 @@ class Connection(object):
             if len(buff) > 6000 or len(arg) > 6000:
                 buff = SYM_EMPTY.join(
                     (buff, SYM_DOLLAR, b(str(len(arg))), SYM_CRLF))
-                output.append(buff)
-                output.append(arg)
+                output.extend((buff, arg))
                 buff = SYM_CRLF
             else:
                 buff = SYM_EMPTY.join((buff, SYM_DOLLAR, b(str(len(arg))),
@@ -705,9 +684,7 @@ class SSLConnection(Connection):
                 'required': ssl.CERT_REQUIRED
             }
             if ssl_cert_reqs not in CERT_REQS:
-                raise RedisError(
-                    "Invalid SSL Certificate Requirements Flag: %s" %
-                    ssl_cert_reqs)
+                raise RedisError(f"Invalid SSL Certificate Requirements Flag: {ssl_cert_reqs}")
             ssl_cert_reqs = CERT_REQS[ssl_cert_reqs]
         self.cert_reqs = ssl_cert_reqs
         self.ca_certs = ssl_ca_certs
@@ -757,11 +734,9 @@ class UnixDomainSocketConnection(Connection):
         # args for socket.error can either be (errno, "message")
         # or just "message"
         if len(exception.args) == 1:
-            return "Error connecting to unix socket: %s. %s." % \
-                (self.path, exception.args[0])
+            return f"Error connecting to unix socket: {self.path}. {exception.args[0]}."
         else:
-            return "Error %s connecting to unix socket: %s. %s." % \
-                (exception.args[0], self.path, exception.args[1])
+            return f"Error {exception.args[0]} connecting to unix socket: {self.path}. {exception.args[1]}."
 
 
 FALSE_STRINGS = ('0', 'F', 'FALSE', 'N', 'NO')
@@ -848,14 +823,11 @@ class ConnectionPool(object):
 
         for name, value in iteritems(parse_qs(qs)):
             if value and len(value) > 0:
-                parser = URL_QUERY_ARGUMENT_PARSERS.get(name)
-                if parser:
+                if parser := URL_QUERY_ARGUMENT_PARSERS.get(name):
                     try:
                         url_options[name] = parser(value[0])
                     except (TypeError, ValueError):
-                        warnings.warn(UserWarning(
-                            "Invalid value for `%s` in connection URL." % name
-                        ))
+                        warnings.warn(UserWarning(f"Invalid value for `{name}` in connection URL."))
                 else:
                     url_options[name] = value[0]
 
@@ -870,18 +842,20 @@ class ConnectionPool(object):
 
         # We only support redis:// and unix:// schemes.
         if url.scheme == 'unix':
-            url_options.update({
+            url_options |= {
                 'password': password,
                 'path': path,
                 'connection_class': UnixDomainSocketConnection,
-            })
+            }
+
 
         else:
-            url_options.update({
+            url_options |= {
                 'host': hostname,
                 'port': int(url.port or 6379),
                 'password': password,
-            })
+            }
+
 
             # If there's a path argument, use it as the db argument if a
             # querystring value wasn't specified
@@ -898,7 +872,7 @@ class ConnectionPool(object):
         url_options['db'] = int(url_options.get('db', db or 0))
 
         # update the arguments from the URL values
-        kwargs.update(url_options)
+        kwargs |= url_options
 
         # backwards compatability
         if 'charset' in kwargs:
@@ -935,10 +909,7 @@ class ConnectionPool(object):
         self.reset()
 
     def __repr__(self):
-        return "%s<%s>" % (
-            type(self).__name__,
-            self.connection_class.description_format % self.connection_kwargs,
-        )
+        return f"{type(self).__name__}<{self.connection_class.description_format % self.connection_kwargs}>"
 
     def reset(self):
         self.pid = os.getpid()

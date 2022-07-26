@@ -61,7 +61,7 @@ def string_keys_to_dict(key_string, callback):
 def dict_merge(*dicts):
     merged = {}
     for d in dicts:
-        merged.update(d)
+        merged |= d
     return merged
 
 
@@ -70,7 +70,7 @@ def parse_debug_object(response):
     # The 'type' of the object is the first item in the response, but isn't
     # prefixed with a name
     response = nativestr(response)
-    response = 'type:' + response
+    response = f'type:{response}'
     response = dict([kv.split(':') for kv in response.split()])
 
     # parse some expected int values from the string response
@@ -98,10 +98,7 @@ def parse_info(response):
     def get_value(value):
         if ',' not in value or '=' not in value:
             try:
-                if '.' in value:
-                    return float(value)
-                else:
-                    return int(value)
+                return float(value) if '.' in value else int(value)
             except ValueError:
                 return value
         else:
@@ -227,15 +224,11 @@ def sort_return_tuples(response, **options):
 
 
 def int_or_none(response):
-    if response is None:
-        return None
-    return int(response)
+    return None if response is None else int(response)
 
 
 def float_or_none(response):
-    if response is None:
-        return None
-    return float(response)
+    return None if response is None else float(response)
 
 
 def bool_ok(response):
@@ -243,11 +236,10 @@ def bool_ok(response):
 
 
 def parse_client_list(response, **options):
-    clients = []
-    for c in nativestr(response).splitlines():
-        # Values might contain '='
-        clients.append(dict([pair.split('=', 1) for pair in c.split(' ')]))
-    return clients
+    return [
+        dict([pair.split('=', 1) for pair in c.split(' ')])
+        for c in nativestr(response).splitlines()
+    ]
 
 
 def parse_config_get(response, **options):
@@ -298,8 +290,9 @@ def _parse_node_line(line):
         'last_pong_rcvd': pong,
         'epoch': epoch,
         'slots': slots,
-        'connected': True if connected == 'connected' else False
+        'connected': connected == 'connected',
     }
+
     return addr, node_dict
 
 
@@ -316,11 +309,7 @@ def parse_georadius_generic(response, **options):
         # with other command arguments.
         return response
 
-    if type(response) != list:
-        response_list = [response]
-    else:
-        response_list = response
-
+    response_list = [response] if type(response) != list else response
     if not options['withdist'] and not options['withcoord']\
             and not options['withhash']:
         # just a bunch of places
@@ -342,7 +331,7 @@ def parse_georadius_generic(response, **options):
 
 
 def parse_pubsub_numsub(response, **options):
-    return list(zip(response[0::2], response[1::2]))
+    return list(zip(response[::2], response[1::2]))
 
 
 class StrictRedis(object):
@@ -520,28 +509,31 @@ class StrictRedis(object):
             }
             # based on input, setup appropriate connection args
             if unix_socket_path is not None:
-                kwargs.update({
+                kwargs |= {
                     'path': unix_socket_path,
-                    'connection_class': UnixDomainSocketConnection
-                })
+                    'connection_class': UnixDomainSocketConnection,
+                }
+
             else:
                 # TCP specific options
-                kwargs.update({
+                kwargs |= {
                     'host': host,
                     'port': port,
                     'socket_connect_timeout': socket_connect_timeout,
                     'socket_keepalive': socket_keepalive,
                     'socket_keepalive_options': socket_keepalive_options,
-                })
+                }
+
 
                 if ssl:
-                    kwargs.update({
+                    kwargs |= {
                         'connection_class': SSLConnection,
                         'ssl_keyfile': ssl_keyfile,
                         'ssl_certfile': ssl_certfile,
                         'ssl_cert_reqs': ssl_cert_reqs,
                         'ssl_ca_certs': ssl_ca_certs,
-                    })
+                    }
+
             connection_pool = ConnectionPool(**kwargs)
         self.connection_pool = connection_pool
         self._use_lua_lock = None
@@ -549,7 +541,7 @@ class StrictRedis(object):
         self.response_callbacks = self.__class__.RESPONSE_CALLBACKS.copy()
 
     def __repr__(self):
-        return "%s<%s>" % (type(self).__name__, repr(self.connection_pool))
+        return f"{type(self).__name__}<{repr(self.connection_pool)}>"
 
     def set_response_callback(self, command, callback):
         "Set a custom Response Callback"
@@ -894,8 +886,7 @@ class StrictRedis(object):
         if start is not None and end is not None:
             params.append(start)
             params.append(end)
-        elif (start is not None and end is None) or \
-                (end is not None and start is None):
+        elif start is not None or end is not None:
             raise RedisError("Both start and end must be specified")
         return self.execute_command('BITCOUNT', *params)
 
@@ -1047,7 +1038,7 @@ class StrictRedis(object):
         if args:
             if len(args) != 1 or not isinstance(args[0], dict):
                 raise RedisError('MSET requires **kwargs or a single dict arg')
-            kwargs.update(args[0])
+            kwargs |= args[0]
         items = []
         for pair in iteritems(kwargs):
             items.extend(pair)
@@ -1063,7 +1054,7 @@ class StrictRedis(object):
             if len(args) != 1 or not isinstance(args[0], dict):
                 raise RedisError('MSETNX requires **kwargs or a single '
                                  'dict arg')
-            kwargs.update(args[0])
+            kwargs |= args[0]
         items = []
         for pair in iteritems(kwargs):
             items.extend(pair)
@@ -1179,7 +1170,7 @@ class StrictRedis(object):
         Flag the ``offset`` in ``name`` as ``value``. Returns a boolean
         indicating the previous value of ``offset``.
         """
-        value = value and 1 or 0
+        value = 1 if value else 0
         return self.execute_command('SETBIT', name, offset, value)
 
     def setex(self, name, time, value):
@@ -1262,10 +1253,7 @@ class StrictRedis(object):
         """
         if timeout is None:
             timeout = 0
-        if isinstance(keys, basestring):
-            keys = [keys]
-        else:
-            keys = list(keys)
+        keys = [keys] if isinstance(keys, basestring) else list(keys)
         keys.append(timeout)
         return self.execute_command('BLPOP', *keys)
 
@@ -1282,10 +1270,7 @@ class StrictRedis(object):
         """
         if timeout is None:
             timeout = 0
-        if isinstance(keys, basestring):
-            keys = [keys]
-        else:
-            keys = list(keys)
+        keys = [keys] if isinstance(keys, basestring) else list(keys)
         keys.append(timeout)
         return self.execute_command('BRPOP', *keys)
 
@@ -1450,11 +1435,10 @@ class StrictRedis(object):
             pieces.append(Token.get_token('STORE'))
             pieces.append(store)
 
-        if groups:
-            if not get or isinstance(get, basestring) or len(get) < 2:
-                raise DataError('when using "groups" the "get" argument '
-                                'must be specified and contain at least '
-                                'two keys')
+        if groups and (not get or isinstance(get, basestring) or len(get) < 2):
+            raise DataError('when using "groups" the "get" argument '
+                            'must be specified and contain at least '
+                            'two keys')
 
         options = {'groups': len(get) if groups else None}
         return self.execute_command('SORT', *pieces, **options)
@@ -1488,8 +1472,7 @@ class StrictRedis(object):
         cursor = '0'
         while cursor != 0:
             cursor, data = self.scan(cursor=cursor, match=match, count=count)
-            for item in data:
-                yield item
+            yield from data
 
     def sscan(self, name, cursor=0, match=None, count=None):
         """
@@ -1520,8 +1503,7 @@ class StrictRedis(object):
         while cursor != 0:
             cursor, data = self.sscan(name, cursor=cursor,
                                       match=match, count=count)
-            for item in data:
-                yield item
+            yield from data
 
     def hscan(self, name, cursor=0, match=None, count=None):
         """
@@ -1552,8 +1534,7 @@ class StrictRedis(object):
         while cursor != 0:
             cursor, data = self.hscan(name, cursor=cursor,
                                       match=match, count=count)
-            for item in data.items():
-                yield item
+            yield from data.items()
 
     def zscan(self, name, cursor=0, match=None, count=None,
               score_cast_func=float):
@@ -1592,8 +1573,7 @@ class StrictRedis(object):
             cursor, data = self.zscan(name, cursor=cursor, match=match,
                                       count=count,
                                       score_cast_func=score_cast_func)
-            for item in data:
-                yield item
+            yield from data
 
     # SET COMMANDS
     def sadd(self, name, *values):
@@ -1694,8 +1674,7 @@ class StrictRedis(object):
                                  "values and scores")
             pieces.extend(args)
         for pair in iteritems(kwargs):
-            pieces.append(pair[1])
-            pieces.append(pair[0])
+            pieces.extend((pair[1], pair[0]))
         return self.execute_command('ZADD', name, *pieces)
 
     def zcard(self, name):
@@ -1767,7 +1746,7 @@ class StrictRedis(object):
                 (num is not None and start is None):
             raise RedisError("``start`` and ``num`` must both be specified")
         pieces = ['ZRANGEBYLEX', name, min, max]
-        if start is not None and num is not None:
+        if start is not None:
             pieces.extend([Token.get_token('LIMIT'), start, num])
         return self.execute_command(*pieces)
 
@@ -1783,7 +1762,7 @@ class StrictRedis(object):
                 (num is not None and start is None):
             raise RedisError("``start`` and ``num`` must both be specified")
         pieces = ['ZREVRANGEBYLEX', name, max, min]
-        if start is not None and num is not None:
+        if start is not None:
             pieces.extend([Token.get_token('LIMIT'), start, num])
         return self.execute_command(*pieces)
 
@@ -1805,7 +1784,7 @@ class StrictRedis(object):
                 (num is not None and start is None):
             raise RedisError("``start`` and ``num`` must both be specified")
         pieces = ['ZRANGEBYSCORE', name, min, max]
-        if start is not None and num is not None:
+        if start is not None:
             pieces.extend([Token.get_token('LIMIT'), start, num])
         if withscores:
             pieces.append(Token.get_token('WITHSCORES'))
@@ -1891,7 +1870,7 @@ class StrictRedis(object):
                 (num is not None and start is None):
             raise RedisError("``start`` and ``num`` must both be specified")
         pieces = ['ZREVRANGEBYSCORE', name, max, min]
-        if start is not None and num is not None:
+        if start is not None:
             pieces.extend([Token.get_token('LIMIT'), start, num])
         if withscores:
             pieces.append(Token.get_token('WITHSCORES'))
@@ -2055,7 +2034,7 @@ class StrictRedis(object):
         return self.execute_command('PUBSUB NUMSUB', *args)
 
     def cluster(self, cluster_arg, *args):
-        return self.execute_command('CLUSTER %s' % cluster_arg.upper(), *args)
+        return self.execute_command(f'CLUSTER {cluster_arg.upper()}', *args)
 
     def eval(self, script, numkeys, *keys_and_args):
         """
@@ -2318,8 +2297,7 @@ class Redis(StrictRedis):
                                  "values and scores")
             pieces.extend(reversed(args))
         for pair in iteritems(kwargs):
-            pieces.append(pair[1])
-            pieces.append(pair[0])
+            pieces.extend((pair[1], pair[0]))
         return self.execute_command('ZADD', name, *pieces)
 
 
@@ -2372,14 +2350,18 @@ class PubSub(object):
         # so we need to decode channel/pattern names back to unicode strings
         # before passing them to [p]subscribe.
         if self.channels:
-            channels = {}
-            for k, v in iteritems(self.channels):
-                channels[self.encoder.decode(k, force=True)] = v
+            channels = {
+                self.encoder.decode(k, force=True): v
+                for k, v in iteritems(self.channels)
+            }
+
             self.subscribe(**channels)
         if self.patterns:
-            patterns = {}
-            for k, v in iteritems(self.patterns):
-                patterns[self.encoder.decode(k, force=True)] = v
+            patterns = {
+                self.encoder.decode(k, force=True): v
+                for k, v in iteritems(self.patterns)
+            }
+
             self.psubscribe(**patterns)
 
     @property
@@ -2512,8 +2494,7 @@ class PubSub(object):
         before returning. Timeout should be specified as a floating point
         number.
         """
-        response = self.parse_response(block=False, timeout=timeout)
-        if response:
+        if response := self.parse_response(block=False, timeout=timeout):
             return self.handle_message(response, ignore_subscribe_messages)
         return None
 
@@ -2554,18 +2535,17 @@ class PubSub(object):
         if message_type in self.PUBLISH_MESSAGE_TYPES:
             # if there's a message handler, invoke it
             handler = None
-            if message_type == 'pmessage':
-                handler = self.patterns.get(message['pattern'], None)
-            else:
-                handler = self.channels.get(message['channel'], None)
+            handler = (
+                self.patterns.get(message['pattern'], None)
+                if message_type == 'pmessage'
+                else self.channels.get(message['channel'], None)
+            )
+
             if handler:
                 handler(message)
                 return None
-        else:
-            # this is a subscribe/unsubscribe message. ignore if we don't
-            # want them
-            if ignore_subscribe_messages or self.ignore_subscribe_messages:
-                return None
+        elif ignore_subscribe_messages or self.ignore_subscribe_messages:
+            return None
 
         return message
 

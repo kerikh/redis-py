@@ -9,9 +9,8 @@ _REDIS_VERSIONS = {}
 
 
 def get_version(**kwargs):
-    params = {'host': 'localhost', 'port': 6379, 'db': 9}
-    params.update(kwargs)
-    key = '%s:%s' % (params['host'], params['port'])
+    params = {'host': 'localhost', 'port': 6379, 'db': 9} | kwargs
+    key = f"{params['host']}:{params['port']}"
     if key not in _REDIS_VERSIONS:
         client = redis.Redis(**params)
         _REDIS_VERSIONS[key] = client.info()['redis_version']

@@ -25,8 +25,7 @@ def parse_args():
                         help='Data size of SET/GET value in bytes (default 2)',
                         default=2)
 
-    args = parser.parse_args()
-    return args
+    return parser.parse_args()
 
 
 def run():
@@ -50,15 +49,13 @@ def timer(func):
         start = time.clock()
         ret = func(*args, **kwargs)
         duration = time.clock() - start
-        if 'num' in kwargs:
-            count = kwargs['num']
-        else:
-            count = args[1]
+        count = kwargs['num'] if 'num' in kwargs else args[1]
         print('{0} - {1} Requests'.format(func.__name__, count))
         print('Duration  = {}'.format(duration))
         print('Rate = {}'.format(count/duration))
         print('')
         return ret
+
     return wrapper
 
 

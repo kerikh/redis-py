@@ -51,7 +51,7 @@ def make_subscribe_test_data(pubsub, type):
             'unsub_func': pubsub.punsubscribe,
             'keys': ['f*', 'b*', u('uni') + unichr(4456) + u('*')]
         }
-    assert False, 'invalid subscribe type: %s' % type
+    assert False, f'invalid subscribe type: {type}'
 
 
 class TestPubSubSubscribeUnsubscribe(object):
@@ -98,10 +98,7 @@ class TestPubSubSubscribeUnsubscribe(object):
         # calling get_message again reconnects and resubscribes
         # note, we may not re-subscribe to channels in exactly the same order
         # so we have to do some extra checks to make sure we got them all
-        messages = []
-        for i in range(len(keys)):
-            messages.append(wait_for_message(p))
-
+        messages = [wait_for_message(p) for _ in range(len(keys))]
         unique_channels = set()
         assert len(messages) == len(keys)
         for i, message in enumerate(messages):

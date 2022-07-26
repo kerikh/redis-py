@@ -27,10 +27,8 @@ except ImportError:
     def PyTest(x):
         x
 
-f = open(os.path.join(os.path.dirname(__file__), 'README.rst'))
-long_description = f.read()
-f.close()
-
+with open(os.path.join(os.path.dirname(__file__), 'README.rst')) as f:
+    long_description = f.read()
 setup(
     name='redis',
     version=__version__,

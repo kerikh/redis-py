@@ -157,7 +157,7 @@ else:
         return x
 
     def b(x):
-        return x.encode('latin-1') if not isinstance(x, bytes) else x
+        return x if isinstance(x, bytes) else x.encode('latin-1')
 
     next = next
     unichr = chr
